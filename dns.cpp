@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -77,6 +79,7 @@ struct DNS_Client
     void        Parse_MX_Record(const char* src, char* dst);
     void        Parse_MX_Request();
     in_addr_t   Parse_A_Request();
+    in_addr_t   GetNameServer();
 
     int         sock;
     char*       packet;
@@ -100,13 +103,38 @@ DNS_Client::DNS_Client()
 
     dest.sin_family      = AF_INET;
     dest.sin_port        = htons(53);
-    dest.sin_addr.s_addr = inet_addr("DNS Server IP");
+    dest.sin_addr.s_addr = GetNameServer();
 }
 
 DNS_Client::~DNS_Client()
 {
     close(sock);
     delete[] packet;
+}
+
+in_addr_t DNS_Client::GetNameServer()
+{
+    std::string       line;
+    std::ifstream     file;
+    std::stringstream ss;
+
+    file.open("/etc/resolv.conf");
+
+    if (!file.is_open())
+        return 0;
+
+    while (std::getline(file, line))
+    {
+        if (line.find("nameserver") == 0)
+        {
+            ss << line;
+            ss >> line >> line;
+            break;
+        }
+    }
+
+    file.close();
+    return inet_addr(line.c_str());
 }
 
 DNS_Answer* DNS_Client::SkipAnswerName(const char* data)

@@ -208,9 +208,9 @@ void DNS_Client::Parse_MX_Record(const char* src, char* dst)
     uint32_t len;
     uint16_t label;
 
-    label = htons(*(uint16_t*)src) & 0xC000;
+    label = htons(*(uint16_t*)src);
 
-    if (label == 0xC000)
+    if ((label & 0xC000) == 0xC000)
         src = packet + (label & 0x3FFF);
 
     len = *src + 1;

@@ -81,35 +81,35 @@ struct DNS_Client
     in_addr_t   Parse_A_Request();
     in_addr_t   GetNameServer();
 
-    int         sock;
-    char*       packet;
-    uint32_t    packet_len;
-    uint16_t    transaction_id;
-    sockaddr_in dest;
+    int         Sock;
+    char*       Packet;
+    uint32_t    PacketLen;
+    uint16_t    TransID;
+    sockaddr_in Dest;
 
-    std::vector<DNS_MX_Answer> results;
+    std::vector<DNS_MX_Answer> Results;
 };
 
 
 DNS_Client::DNS_Client()
 {
     srand(time(nullptr));
-    results.reserve(6);
+    Results.reserve(6);
 
-    packet = new char[1024];
-    sock   = socket(AF_INET, SOCK_DGRAM, 0);
-    assert(sock != -1);
-    assert(packet);
+    Packet = new char[1024];
+    Sock   = socket(AF_INET, SOCK_DGRAM, 0);
+    assert(Sock != -1);
+    assert(Packet);
 
-    dest.sin_family      = AF_INET;
-    dest.sin_port        = htons(53);
-    dest.sin_addr.s_addr = GetNameServer();
+    Dest.sin_family      = AF_INET;
+    Dest.sin_port        = htons(53);
+    Dest.sin_addr.s_addr = GetNameServer();
 }
 
 DNS_Client::~DNS_Client()
 {
-    close(sock);
-    delete[] packet;
+    close(Sock);
+    delete[] Packet;
 }
 
 in_addr_t DNS_Client::GetNameServer()
@@ -155,16 +155,16 @@ in_addr_t DNS_Client::Parse_A_Request()
     DNS_Header* header;
     DNS_Answer* answer;
 
-    header = (DNS_Header*) packet;
-    recvfrom(sock, packet, 1024, 0, nullptr, 0);
+    header = (DNS_Header*) Packet;
+    recvfrom(Sock, Packet, 1024, 0, nullptr, 0);
 
-    if (header->ID != transaction_id)
+    if (header->ID != TransID)
         return 0;
 
     if (header->Ans == 0)
         return 0;
 
-    answer = SkipAnswerName(packet + packet_len);
+    answer = SkipAnswerName(Packet + PacketLen);
     return answer->Data.A.Data;
 }
 
@@ -175,14 +175,14 @@ void DNS_Client::Parse_MX_Request()
     DNS_Answer*    answer;
     DNS_MX_Answer* newest;
 
-    header = (DNS_Header*) packet;
-    recvfrom(sock, packet, 1024, 0, nullptr, 0);
+    header = (DNS_Header*) Packet;
+    recvfrom(Sock, Packet, 1024, 0, nullptr, 0);
 
-    if (header->ID != transaction_id)
+    if (header->ID != TransID)
         return;
 
-    results.clear();
-    answer_start = packet + packet_len;
+    Results.clear();
+    answer_start = Packet + PacketLen;
 
     for (int i = 0; i < htons(header->Ans); ++i)
     {
@@ -190,8 +190,8 @@ void DNS_Client::Parse_MX_Request()
 
         if (answer->Type == T_MX)
         {
-            results.emplace_back();
-            newest = &results.back();
+            Results.emplace_back();
+            newest = &Results.back();
 
             Parse_MX_Record(&answer->Data.MX.Data, newest->Data);
             newest->Pref = htons(answer->Data.MX.Pref);
@@ -211,7 +211,7 @@ void DNS_Client::Parse_MX_Record(const char* src, char* dst)
     label = htons(*(uint16_t*)src);
 
     if ((label & 0xC000) == 0xC000)
-        src = packet + (label & 0x3FFF);
+        src = Packet + (label & 0x3FFF);
 
     len = *src + 1;
 
@@ -221,7 +221,7 @@ void DNS_Client::Parse_MX_Record(const char* src, char* dst)
         {
             if (((uint8_t)src[i] & 0xC0) == 0xC0)
             {
-                src = packet + (htons(*(uint16_t*)(src+i)) & 0x3FFF);
+                src = Packet + (htons(*(uint16_t*)(src+i)) & 0x3FFF);
                 len = i = 0;
             }
 
@@ -240,8 +240,8 @@ void DNS_Client::Parse_MX_Record(const char* src, char* dst)
 void DNS_Client::SendRequest(const char* domain, enum DNS_Type type)
 {
     DNS_Question* query;
-    DNS_Header*   header = (DNS_Header*)packet;
-    char*         buffer = (char*)(packet + sizeof(DNS_Header));
+    DNS_Header*   header = (DNS_Header*)Packet;
+    char*         buffer = Packet + sizeof(DNS_Header);
     
     int i =  0;
     int j =  1;
@@ -258,21 +258,21 @@ void DNS_Client::SendRequest(const char* domain, enum DNS_Type type)
         buffer[j++] = domain[i++];
     }
     
-    packet_len  = sizeof(DNS_Header)+j+5;
+    PacketLen   = sizeof(DNS_Header)+j+5;
     buffer[j]   = 0;
     buffer[d+1] = i-d-1;
 
     memset(header, 0, sizeof(DNS_Header));
-    header->ID    = (transaction_id = rand() % 65536);
+    header->ID    = (TransID = rand() % 65536);
     header->Flags = 0x0001;
     header->Quest = 0x0100;
 
-    query = (DNS_Question*)(packet + packet_len - 4);
+    query        = (DNS_Question*)(Packet + PacketLen - 4);
     query->Type  = type;
     query->Class = 0x0100;
 
-    sendto(sock, packet, packet_len, 0,
-          (sockaddr*)&dest, sizeof(dest));
+    sendto(Sock, Packet, PacketLen, 0,
+          (sockaddr*)&Dest, sizeof(Dest));
 }
 
 extern "C" DNS_Client* dns_get_client()
@@ -292,6 +292,6 @@ extern "C" DNS_MX_Answer* dns_get_mxhost(DNS_Client* dns, const char* domain, in
     dns->SendRequest(domain, T_MX);
     dns->Parse_MX_Request();
 
-    *len = dns->results.size();
-    return dns->results.data();
+    *len = dns->Results.size();
+    return dns->Results.data();
 }
